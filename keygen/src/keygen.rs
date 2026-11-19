@@ -1303,6 +1303,44 @@ mod tests {
     }
 
     #[test]
+    fn test_should_skip_len_44_pubkeys() {
+        fn grind_match(starts: &str, ends: &str) -> GrindMatch {
+            GrindMatch {
+                starts: starts.to_string(),
+                ends: ends.to_string(),
+                count: AtomicU64::new(1),
+            }
+        }
+
+        // A prefix that no length 44 pubkey can start with, so they may be skipped
+        assert!(should_skip_len_44_pubkeys(&[grind_match("zz", "")], false));
+        assert!(should_skip_len_44_pubkeys(&[grind_match("zz", ""), grind_match("zy", "")], false));
+
+        // A prefix that length 44 pubkeys can start with
+        assert!(!should_skip_len_44_pubkeys(&[grind_match("A", "")], false));
+
+        // A suffix-only search does not constrain the leading characters of the
+        // pubkey, so length 44 pubkeys must still be searched
+        assert!(!should_skip_len_44_pubkeys(&[grind_match("", "lady")], false));
+        assert!(!should_skip_len_44_pubkeys(&[grind_match("", "lady")], true));
+        assert!(!should_skip_len_44_pubkeys(
+            &[grind_match("zz", ""), grind_match("", "lady")],
+            false
+        ));
+
+        // The same holds when the search criteria come from `--ends-with`
+        let grind_matches = grind_parse_args(
+            false,
+            HashSet::new(),
+            HashSet::from(["LADY:1".to_string()]),
+            HashSet::new(),
+            1,
+        );
+        assert_eq!(grind_matches[0].starts, "");
+        assert!(!should_skip_len_44_pubkeys(&grind_matches, false));
+    }
+
+    #[test]
     fn test_read_write_pubkey() -> Result<(), std::boxed::Box<dyn std::error::Error>> {
         let filename = "test_pubkey.json";
         let pubkey = solana_pubkey::new_rand();

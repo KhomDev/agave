@@ -222,6 +222,12 @@ fn grind_parse_args(
 fn should_skip_len_44_pubkeys(grind_matches: &[GrindMatch], ignore_case: bool) -> bool {
     static BS58_ALPHABET: &str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
     grind_matches.iter().all(|g| {
+        // An entry without a prefix (`--ends-with` only) places no constraint on
+        // the first characters of the pubkey, so length 44 pubkeys can still match.
+        // Padding the empty prefix with "1"s would otherwise decode to 44 zero bytes.
+        if g.starts.is_empty() {
+            return false;
+        }
         // If we are ignoring the case, upper-case the search string.
         // Uppercase letters are always earlier in the alphabet, thus smaller.
         let target_key = if ignore_case {

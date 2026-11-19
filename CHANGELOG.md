@@ -45,6 +45,10 @@ Release channels have their own copy of this changelog:
 
 #### Changes
 
+* `solana-keygen grind --ends-with` no longer skips 44-character pubkeys. Previously, a search
+  with no `--starts-with` prefix only considered the rarer 43-character pubkeys, so it took much
+  longer to find a match.
+
 ## 4.5.0
 
 ### RPC

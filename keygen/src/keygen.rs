@@ -215,6 +215,34 @@ fn grind_parse_args(
     grind_matches
 }
 
+// The vast majority of base58 encoded public keys have length 44, but
+// these only encapsulate prefixes 1-9 and A-H.  If the user is searching
+// for a keypair that starts with a prefix of J-Z or a-z, then there is no
+// reason to waste time searching for a keypair that will never match
+fn should_skip_len_44_pubkeys(grind_matches: &[GrindMatch], ignore_case: bool) -> bool {
+    static BS58_ALPHABET: &str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    grind_matches.iter().all(|g| {
+        // If we are ignoring the case, upper-case the search string.
+        // Uppercase letters are always earlier in the alphabet, thus smaller.
+        let target_key = if ignore_case {
+            g.starts
+                .chars()
+                .map(|c| {
+                    let up = c.to_ascii_uppercase();
+                    if BS58_ALPHABET.contains(up) { up } else { c }
+                })
+                .collect()
+        } else {
+            g.starts.clone()
+        };
+        let target_key = target_key + &(0..44 - g.starts.len()).map(|_| "1").collect::<String>();
+        match bs58::decode(target_key).into_vec() {
+            Ok(out) => out.len() > 32,
+            Err(_) => false,
+        }
+    })
+}
+
 fn app<'a>(num_threads: &'a str, crate_version: &'a str) -> Command<'a> {
     Command::new(crate_name!())
         .about(crate_description!())
@@ -730,33 +758,7 @@ fn do_main(matches: &ArgMatches) -> Result<(), Box<dyn error::Error>> {
             };
             let no_outfile = matches.try_contains_id(NO_OUTFILE_ARG.name)?;
 
-            // The vast majority of base58 encoded public keys have length 44, but
-            // these only encapsulate prefixes 1-9 and A-H.  If the user is searching
-            // for a keypair that starts with a prefix of J-Z or a-z, then there is no
-            // reason to waste time searching for a keypair that will never match
-            static BS58_ALPHABET: &str =
-                "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-            let skip_len_44_pubkeys = grind_matches.iter().all(|g| {
-                // If we are ignoring the case, upper-case the search string.
-                // Uppercase letters are always earlier in the alphabet, thus smaller.
-                let target_key = if ignore_case {
-                    g.starts
-                        .chars()
-                        .map(|c| {
-                            let up = c.to_ascii_uppercase();
-                            if BS58_ALPHABET.contains(up) { up } else { c }
-                        })
-                        .collect()
-                } else {
-                    g.starts.clone()
-                };
-                let target_key =
-                    target_key + &(0..44 - g.starts.len()).map(|_| "1").collect::<String>();
-                match bs58::decode(target_key).into_vec() {
-                    Ok(out) => out.len() > 32,
-                    Err(_) => false,
-                }
-            });
+            let skip_len_44_pubkeys = should_skip_len_44_pubkeys(&grind_matches, ignore_case);
             let grind_matches_thread_safe = Arc::new(grind_matches);
             let attempts = Arc::new(AtomicU64::new(1));
             let found = Arc::new(AtomicU64::new(0));

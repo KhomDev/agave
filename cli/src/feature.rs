@@ -759,8 +759,16 @@ async fn cluster_info_stats(rpc_client: &RpcClient) -> Result<ClusterInfoStats, 
                         rpc_nodes_count,
                     },
                 )| {
-                    let stake_percent = (stake_lamports as f64 / total_active_stake as f64) * 100.;
-                    let rpc_percent = (rpc_nodes_count as f32 / total_rpc_nodes as f32) * 100.;
+                    let stake_percent = if total_active_stake == 0 {
+                        0.
+                    } else {
+                        (stake_lamports as f64 / total_active_stake as f64) * 100.
+                    };
+                    let rpc_percent = if total_rpc_nodes == 0 {
+                        0.
+                    } else {
+                        (rpc_nodes_count as f32 / total_rpc_nodes as f32) * 100.
+                    };
                     if stake_percent >= 0.001 || rpc_percent >= 0.001 {
                         Some((
                             cluster_config,

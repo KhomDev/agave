@@ -1120,3 +1120,74 @@ async fn process_revoke(
         .await;
     log_instruction_custom_error_to_str::<FeatureGateError>(result, config)
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        serde_json::{Value, json},
+        solana_rpc_client::mock_sender::Mocks,
+        solana_rpc_client_api::request::RpcRequest,
+        std::collections::HashMap,
+    };
+
+    fn mock_rpc_client(contact_infos: Value, vote_accounts: Value) -> RpcClient {
+        let mut mocks: Mocks = HashMap::new();
+        mocks.insert(RpcRequest::GetClusterNodes, contact_infos);
+        mocks.insert(RpcRequest::GetVoteAccounts, vote_accounts);
+        RpcClient::new_mock_with_mocks("succeeds".to_string(), mocks)
+    }
+
+    // Two feature sets that both run the same top software version, one RPC node each.
+    fn contact_infos() -> Value {
+        json!([
+            {"pubkey": "node1", "featureSet": 1, "version": "2.1.0", "rpc": "127.0.0.1:8899"},
+            {"pubkey": "node2", "featureSet": 2, "version": "2.1.0", "rpc": "127.0.0.1:8900"}
+        ])
+    }
+
+    #[tokio::test]
+    async fn test_feature_activation_allowed_with_zero_active_stake() {
+        let rpc_client = mock_rpc_client(contact_infos(), json!({"current": [], "delinquent": []}));
+        let (_, cluster_feature_sets, _) = feature_activation_allowed(&rpc_client, false)
+            .await
+            .unwrap();
+        let feature_sets = cluster_feature_sets.unwrap().feature_sets;
+        assert_eq!(feature_sets.len(), 2);
+        for feature_set in feature_sets {
+            assert_eq!(feature_set.stake_percent, 0.0);
+            assert_eq!(feature_set.rpc_percent, 50.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_feature_activation_allowed_with_active_stake() {
+        let vote_accounts = json!({
+            "current": [{
+                "votePubkey": "vote1",
+                "nodePubkey": "node1",
+                "activatedStake": 100,
+                "commission": 0,
+                "epochVoteAccount": true,
+                "epochCredits": [],
+                "lastVote": 0,
+                "rootSlot": 0
+            }],
+            "delinquent": []
+        });
+        let rpc_client = mock_rpc_client(contact_infos(), vote_accounts);
+        let (_, cluster_feature_sets, _) = feature_activation_allowed(&rpc_client, false)
+            .await
+            .unwrap();
+        let feature_sets = cluster_feature_sets.unwrap().feature_sets;
+        let stake_of = |feature_set: u32| {
+            feature_sets
+                .iter()
+                .find(|stats| stats.feature_set == feature_set)
+                .unwrap()
+                .stake_percent
+        };
+        assert_eq!(stake_of(1), 100.0);
+        assert_eq!(stake_of(2), 0.0);
+    }
+}
